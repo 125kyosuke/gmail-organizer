@@ -37,6 +37,7 @@ function triageGetBatch() {
       date: Utilities.formatDate(t.getLastMessageDate(), Session.getScriptTimeZone(), 'M/d'),
       unread: t.isUnread(),
       count: t.getMessageCount(),
+      labels: t.getLabels().map((l) => l.getName()), // いま付いているラベル
     };
   });
   return { cards: cards, inboxLeft: countInbox_() };
@@ -57,6 +58,10 @@ function triageAct(ids, action, labelName) {
   } else if (action === 'label') {
     const ls = normalizeLabels_(labelName).map(triageLabel_);
     threads.forEach((t) => { ls.forEach((l) => t.addLabel(l)); t.moveToArchive(); });
+  } else if (action === 'unlabel') {
+    // ラベルをはがすだけ(トレイ位置は変えない)
+    const ls = normalizeLabels_(labelName).map(triageLabel_);
+    threads.forEach((t) => ls.forEach((l) => t.removeLabel(l)));
   } else if (action === 'star') {
     const l = triageLabel_('★重要');
     threads.forEach((t) => {
@@ -78,6 +83,9 @@ function triageUndo(ids, action, labelName) {
   } else if (action === 'label') {
     const ls = normalizeLabels_(labelName).map(triageLabel_);
     threads.forEach((t) => { ls.forEach((l) => t.removeLabel(l)); t.moveToInbox(); });
+  } else if (action === 'unlabel') {
+    const ls = normalizeLabels_(labelName).map(triageLabel_);
+    threads.forEach((t) => ls.forEach((l) => t.addLabel(l)));
   } else if (action === 'star') {
     const l = triageLabel_('★重要');
     threads.forEach((t) => {
@@ -91,10 +99,17 @@ function triageUndo(ids, action, labelName) {
   return threads.length;
 }
 
-/* ── ラベルボタンの設定(ユーザーごとに保存) ── */
+/* ── ラベルボタンの設定(ユーザーごとに保存) ──
+ * chosen: ボタンに並べるラベル(未設定なら既存のGmailラベルから自動)
+ * all:    Gmailにある全ラベル(編集画面の候補用) */
 function triageGetLabels() {
+  const all = GmailApp.getUserLabels()
+    .map((l) => l.getName())
+    .filter((n) => n !== '★重要' && n !== '整理済み'); // 専用ボタン/内部用は除く
   const p = PropertiesService.getUserProperties().getProperty('TRIAGE_LABELS');
-  return p ? JSON.parse(p) : ['大学', 'バイト', 'お金', 'メルマガ', 'あとで読む'];
+  const chosen = p ? JSON.parse(p)
+    : (all.length ? all.slice(0, 8) : ['大学', 'バイト', 'お金', 'メルマガ', 'あとで読む']);
+  return { chosen: chosen, all: all };
 }
 
 function triageSaveLabels(arr) {
