@@ -68,6 +68,11 @@
     display: flex; align-items: center; justify-content: center; padding: 0;
   }
   .chip button:hover { background: #c2352b; color: #fff; }
+  .chip .ckey {
+    font-size: 9px; font-weight: 400; color: #8a92a3;
+    background: #fff; border: 1px solid #d8dce4; border-radius: 4px;
+    padding: 0 3px; line-height: 1.5;
+  }
   .snippet { color: var(--sub); font-size: 13.5px; line-height: 1.65; word-break: break-word; }
   .snippet.clamp { display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
   .morebtn {
@@ -228,7 +233,7 @@
     <div class="hint">
       複数ラベル: 「複数選択」をONにして(PCはXキー)ラベルを選び、「付けて完了」(または Enter)。
       スマホは カードを右スワイプ=アーカイブ / 左スワイプ=あとで。
-      カード上のラベルチップの×で、付いているラベルをはがせます。
+      付いているラベルはチップの× か Alt+数字(チップに表示)ではがせます。
     </div>
   </div>
 </div>
@@ -344,8 +349,8 @@
           <span class="date">${esc(c.date)}${c.count > 1 ? ' ・' + c.count + '通' : ''}</span>
         </div>
         <div class="email">${esc(c.fromEmail)}</div>
-        ${(c.labels && c.labels.length) ? `<div class="chiprow">${c.labels.map((n) =>
-          `<span class="chip">${esc(n)}<button data-chip="${escAttr(n)}" title="このラベルをはがす">×</button></span>`).join('')}</div>` : ''}
+        ${(c.labels && c.labels.length) ? `<div class="chiprow">${c.labels.map((n, i) =>
+          `<span class="chip">${i < 8 ? `<span class="ckey">Alt+${i + 1}</span>` : ''}${esc(n)}<button data-chip="${escAttr(n)}" title="このラベルをはがす">×</button></span>`).join('')}</div>` : ''}
         <div class="subject">${esc(c.subject)}</div>
         <div class="snippet clamp" id="snippet">${esc(c.snippet)}</div>
         <button class="morebtn" id="moreBtn" style="display:none">…詳細を読む</button>
@@ -584,6 +589,14 @@
   window.addEventListener('keydown', (e) => {
     if ($('modal').classList.contains('show')) return;
     if (e.key === 'Shift') { shiftHeld = true; $('senderToggle').classList.add('armed'); return; }
+    // Alt+数字 = カードに付いているn番目のラベルをはがす
+    if (e.altKey && /^Digit[1-8]$/.test(e.code)) {
+      const i = Number(e.code.slice(5)) - 1;
+      const c = cards[idx];
+      if (c && c.labels && c.labels[i]) { e.preventDefault(); removeChip(c.labels[i]); }
+      return;
+    }
+    if (e.altKey || e.ctrlKey || e.metaKey) return; // 他のブラウザショートカットには触らない
     const k = e.key.toLowerCase();
     if (k === 'a' || e.key === 'ArrowLeft') act('archive');
     else if (k === 's') act('star');
