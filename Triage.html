@@ -1,0 +1,564 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="theme-color" content="#2563eb">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="メール仕分け">
+<base target="_top">
+<style>
+  :root {
+    --bg: #f6f7fb; --card: #ffffff; --ink: #1f2430; --sub: #6b7280;
+    --line: #e5e7eb; --accent: #2563eb;
+    --c-archive: #64748b; --c-star: #d97706; --c-trash: #dc2626; --c-skip: #9ca3af;
+    --l1: #2563eb; --l2: #059669; --l3: #7c3aed; --l4: #db2777; --l5: #0891b2;
+    --l6: #ca8a04; --l7: #4f46e5; --l8: #ea580c;
+  }
+  * { box-sizing: border-box; margin: 0; -webkit-tap-highlight-color: transparent; }
+  body {
+    font-family: "Hiragino Sans", "Yu Gothic UI", "Meiryo", sans-serif;
+    background: var(--bg); color: var(--ink);
+    min-height: 100vh; display: flex; flex-direction: column; align-items: center;
+  }
+  #wrap { width: 100%; max-width: 560px; padding: 12px 14px 20px; display: flex; flex-direction: column; min-height: 100vh; }
+
+  /* ── ヘッダー ── */
+  header { display: flex; align-items: center; justify-content: space-between; padding: 4px 2px 10px; }
+  header .title { font-weight: 700; font-size: 15px; }
+  header .meta { font-size: 12.5px; color: var(--sub); }
+  #gear { border: none; background: none; cursor: pointer; font-size: 13px; color: var(--sub); padding: 4px 8px; border-radius: 8px; }
+  #gear:hover { background: #eceef3; }
+  #bar { height: 5px; background: #e5e7eb; border-radius: 3px; overflow: hidden; margin-bottom: 14px; }
+  #bar > div { height: 100%; width: 0%; background: var(--accent); border-radius: 3px; transition: width .25s; }
+
+  /* ── カード ── */
+  #stage { flex: 1; display: flex; align-items: stretch; justify-content: center; position: relative; min-height: 240px; }
+  .card {
+    background: var(--card); border: 1px solid var(--line); border-radius: 16px;
+    padding: 20px 20px 18px; width: 100%; align-self: flex-start;
+    box-shadow: 0 6px 20px rgba(30,40,70,.07);
+    animation: slidein .18s ease-out;
+    position: relative; touch-action: pan-y; will-change: transform;
+  }
+  @keyframes slidein { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
+  .card.out-left  { animation: outleft .16s ease-in forwards; }
+  .card.out-right { animation: outright .16s ease-in forwards; }
+  @keyframes outleft  { to { opacity: 0; transform: translateX(-60px) rotate(-3deg); } }
+  @keyframes outright { to { opacity: 0; transform: translateX(60px) rotate(3deg); } }
+
+  .row1 { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+  .unread-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--accent); flex: none; }
+  .from { font-weight: 700; font-size: 15px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .date { margin-left: auto; color: var(--sub); font-size: 12.5px; flex: none; }
+  .email { color: var(--sub); font-size: 12px; margin-bottom: 10px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .subject { font-size: 16.5px; font-weight: 600; line-height: 1.45; margin-bottom: 10px; word-break: break-word; }
+  .snippet { color: var(--sub); font-size: 13.5px; line-height: 1.65; word-break: break-word; }
+  .snippet.clamp { display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+  .morebtn {
+    border: none; background: none; color: var(--accent); font-size: 12.5px;
+    cursor: pointer; padding: 8px 0 0; font-weight: 600;
+  }
+
+  /* ── スワイプ ── */
+  .swipe-badge {
+    position: absolute; top: 16px; padding: 6px 14px; border: 2.5px solid;
+    border-radius: 10px; font-weight: 800; font-size: 15px; opacity: 0;
+    pointer-events: none; background: #fff;
+  }
+  .swipe-badge.archive { left: 14px; color: #059669; border-color: #059669; transform: rotate(-8deg); }
+  .swipe-badge.skip { right: 14px; color: #9ca3af; border-color: #9ca3af; transform: rotate(8deg); }
+  .same-sender {
+    margin-top: 14px; font-size: 12.5px; color: var(--accent);
+    background: #eff4ff; border-radius: 8px; padding: 7px 10px; display: none;
+  }
+  .same-sender.show { display: block; }
+
+  /* ── ボタン ── */
+  #actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 16px; }
+  .btn {
+    flex: 1 1 30%; min-width: 100px; border: none; border-radius: 12px; cursor: pointer;
+    padding: 12px 8px 9px; color: #fff; font-size: 14px; font-weight: 700;
+    display: flex; flex-direction: column; align-items: center; gap: 3px;
+    transition: transform .06s, filter .12s;
+  }
+  .btn:active { transform: scale(.96); }
+  .btn:hover { filter: brightness(1.08); }
+  .btn .key { font-size: 10.5px; font-weight: 400; opacity: .85; }
+  .btn svg { width: 18px; height: 18px; }
+  #labelRow { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
+  .lbtn {
+    flex: 1 1 28%; min-width: 90px; border: none; border-radius: 12px; cursor: pointer;
+    padding: 10px 8px 8px; color: #fff; font-size: 13.5px; font-weight: 700;
+    display: flex; flex-direction: column; align-items: center; gap: 2px;
+    transition: transform .06s, filter .12s;
+  }
+  .lbtn:active { transform: scale(.96); }
+  .lbtn:hover { filter: brightness(1.08); }
+  .lbtn .key { font-size: 10.5px; font-weight: 400; opacity: .85; }
+  .lbtn.selected { box-shadow: 0 0 0 3px #fff, 0 0 0 5.5px currentColor; filter: brightness(1.12); }
+  .lbtn.selected::after { content: '✓'; font-size: 11px; position: absolute; }
+  .lbtn { position: relative; }
+  .lbtn.selected::after { top: 4px; right: 7px; }
+
+  /* ── 複数ラベル選択バー ── */
+  #pendingBar {
+    display: none; margin-top: 10px; padding: 9px 12px; border-radius: 10px;
+    background: #eff4ff; color: var(--accent); font-size: 12.5px; line-height: 1.6;
+  }
+  #pendingBar.show { display: block; }
+  #pendingBar b { font-weight: 800; }
+  .hint { margin-top: 10px; font-size: 11.5px; color: #a3a8b4; line-height: 1.7; }
+
+  #subRow { display: flex; gap: 8px; margin-top: 8px; }
+  .ghost {
+    flex: 1; border: 1px solid var(--line); background: #fff; color: var(--sub);
+    border-radius: 12px; padding: 9px; cursor: pointer; font-size: 13px;
+  }
+  .ghost:hover { background: #f2f4f8; }
+
+  /* ── まとめて処理トグル ── */
+  #senderToggle {
+    display: flex; align-items: center; gap: 8px; margin-top: 12px;
+    font-size: 13px; color: var(--sub); cursor: pointer; user-select: none;
+    padding: 6px 4px;
+  }
+  #senderToggle input { width: 16px; height: 16px; accent-color: var(--accent); }
+  #senderToggle.armed { color: var(--accent); font-weight: 700; }
+
+  /* ── 状態表示 ── */
+  #done, #loading { text-align: center; color: var(--sub); padding: 60px 10px; font-size: 15px; line-height: 2; width: 100%; }
+  #done .big { font-size: 40px; }
+  #toast {
+    position: fixed; bottom: 18px; left: 50%; transform: translateX(-50%);
+    background: #1f2430; color: #fff; font-size: 13px; padding: 9px 16px;
+    border-radius: 99px; opacity: 0; pointer-events: none; transition: opacity .2s;
+    max-width: 90vw; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  #toast.show { opacity: .95; }
+
+  /* ── 設定モーダル ── */
+  #modal {
+    display: none; position: fixed; inset: 0; background: rgba(20,25,40,.45);
+    align-items: center; justify-content: center; z-index: 10;
+  }
+  #modal.show { display: flex; }
+  #modal .box { background: #fff; border-radius: 16px; padding: 22px; width: 92%; max-width: 420px; }
+  #modal h2 { font-size: 16px; margin-bottom: 6px; }
+  #modal p { font-size: 12.5px; color: var(--sub); margin-bottom: 12px; line-height: 1.6; }
+  #labelsInput { width: 100%; height: 150px; border: 1px solid var(--line); border-radius: 10px; padding: 10px; font-size: 14px; resize: none; }
+  #modal .mrow { display: flex; gap: 8px; margin-top: 12px; }
+  #modal .mrow button { flex: 1; border-radius: 10px; padding: 10px; font-size: 14px; cursor: pointer; border: 1px solid var(--line); background: #fff; }
+  #modal .mrow .primary { background: var(--accent); color: #fff; border: none; font-weight: 700; }
+</style>
+</head>
+<body>
+<div id="wrap">
+  <header>
+    <div>
+      <div class="title">
+        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:4px"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="m2 7 10 6 10-6"/></svg>メール仕分け
+      </div>
+      <div class="meta">受信トレイ 残り <span id="left">…</span> 件</div>
+    </div>
+    <button id="gear" onclick="openSettings()">
+      <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:2px"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33h.01a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51h.01a1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82v.01a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>ラベル編集
+    </button>
+  </header>
+  <div id="bar"><div id="barFill"></div></div>
+
+  <div id="stage">
+    <div id="loading">読み込み中…</div>
+  </div>
+
+  <div id="controls" style="display:none">
+    <div id="actions">
+      <button class="btn" style="background:var(--c-archive)" onclick="act('archive')">
+        アーカイブ<span class="key">A / ←</span></button>
+      <button class="btn" style="background:var(--c-star)" onclick="act('star')">
+        ★重要(残す)<span class="key">S</span></button>
+      <button class="btn" style="background:var(--c-trash)" onclick="act('trash')">
+        ゴミ箱<span class="key">D</span></button>
+    </div>
+    <div id="labelRow"></div>
+    <div id="pendingBar"></div>
+    <div id="subRow">
+      <button class="ghost" onclick="skip()">あとで(スキップ) Space</button>
+      <button class="ghost" onclick="undo()">
+        <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:2px"><path d="M9 14 4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 5.5 5.5 5.5 5.5 0 0 1-5.5 5.5H11"/></svg>元に戻す Z
+      </button>
+    </div>
+    <label id="senderToggle">
+      <input type="checkbox" id="senderChk">
+      同じ差出人のメールをまとめて同じ処理にする(Shift押しっぱなしでも)
+    </label>
+    <div class="hint">
+      複数ラベル: PCは Ctrl+数字、スマホはラベル長押しで選択 → 最後のラベルを普通に押す(または Enter)で確定。
+      スマホは カードを右スワイプ=アーカイブ / 左スワイプ=あとで。
+    </div>
+  </div>
+</div>
+
+<div id="toast"></div>
+
+<div id="modal">
+  <div class="box">
+    <h2>ラベルボタンの編集</h2>
+    <p>1行に1つ、よく使う仕分け先を書いてください(最大8個)。数字キー1〜8で押せるようになります。Gmail側にラベルが自動で作られます。</p>
+    <textarea id="labelsInput"></textarea>
+    <div class="mrow">
+      <button onclick="closeSettings()">キャンセル</button>
+      <button class="primary" onclick="saveSettings()">保存</button>
+    </div>
+  </div>
+</div>
+
+<script>
+  /* ── デモモード ──
+   * Apps Script の外(ローカルでこのHTMLを直接開いたとき)は、
+   * サンプルメールで操作感を試せるようにする。実データには一切触れない。 */
+  if (typeof google === 'undefined') {
+    const demoCards = [
+      { id: 'd1', from: 'AIU 教務課', fromEmail: 'kyomu@aiu.ac.jp', subject: '【重要】秋学期 履修登録期間のお知らせ', snippet: '学生各位 秋学期の履修登録は7月14日(月)9:00から7月18日(金)17:00まで、学内システムから受け付けます。期間内に必ず登録を完了してください。なお、抽選科目については7月11日(金)までに希望順位を提出する必要があります。抽選結果は7月13日(日)に発表予定です。履修上限単位数は18単位ですが、GPA3.5以上の学生は20単位まで申請可能です。詳細は添付の履修ガイドをご確認ください。質問がある場合は教務課窓口(平日9:00-17:00)またはメールでお問い合わせください。', date: '7/4', unread: true, count: 1 },
+      { id: 'd2', from: 'Amazon.co.jp', fromEmail: 'store-news@amazon.co.jp', subject: '【本日限定】タイムセール開催中', snippet: '人気の家電・日用品が最大45%OFF。本日23:59まで。今すぐチェック…', date: '7/4', unread: true, count: 1 },
+      { id: 'd3', from: 'Amazon.co.jp', fromEmail: 'store-news@amazon.co.jp', subject: 'プライムデー先行セールのご案内', snippet: 'プライム会員限定の先行セールが始まりました。おすすめ商品はこちら…', date: '7/3', unread: false, count: 1 },
+      { id: 'd4', from: '田中さん(バイト先)', fromEmail: 'tanaka@example-cafe.jp', subject: '来週のシフトについて', snippet: 'お疲れさまです。来週のシフトですが、水曜の夕方に入れる人を探しています。もし可能なら…', date: '7/3', unread: true, count: 3 },
+      { id: 'd5', from: 'X (Twitter)', fromEmail: 'info@x.com', subject: 'あなたのポストに新しいいいねがあります', snippet: 'あなたのポストが3件のいいねを獲得しました。今すぐ確認…', date: '7/2', unread: false, count: 1 },
+    ];
+    let demoPool = demoCards.slice();
+    window.google = { script: { run: null } };
+    google.script.run = new Proxy({}, {
+      get(_, prop) {
+        if (prop === 'withSuccessHandler') return (cb) => makeRunner(cb, null);
+        if (prop === 'withFailureHandler') return (cb) => makeRunner(null, cb);
+        return () => {};
+      },
+    });
+    function makeRunner(ok, ng) {
+      const runner = {
+        _ok: ok, _ng: ng,
+        withSuccessHandler(cb) { this._ok = cb; return this; },
+        withFailureHandler(cb) { this._ng = cb; return this; },
+        triageGetBatch() { setTimeout(() => this._ok && this._ok({ cards: demoPool.slice(), inboxLeft: demoPool.length }), 300); },
+        triageGetLabels() { setTimeout(() => this._ok && this._ok(['大学', 'バイト', 'お金', 'メルマガ', 'あとで読む']), 100); },
+        triageSaveLabels(arr) { setTimeout(() => this._ok && this._ok(arr.slice(0, 8)), 100); },
+        triageAct(ids) { demoPool = demoPool.filter((c) => !ids.includes(c.id)); setTimeout(() => this._ok && this._ok(ids.length), 150); },
+        triageUndo(ids) { setTimeout(() => this._ok && this._ok(ids.length), 150); },
+      };
+      return runner;
+    }
+    setTimeout(() => {
+      const t = document.getElementById('toast');
+      if (t) { t.textContent = 'デモモード:サンプルメールで操作を試せます(実メールには触れません)'; t.classList.add('show'); setTimeout(() => t.classList.remove('show'), 3500); }
+    }, 600);
+  }
+
+  let cards = [];        // いま手元にあるカードの束
+  let idx = 0;           // 表示中のカード位置
+  let labels = [];       // ラベルボタン
+  let undoStack = [];    // {ids, action, label, cards}
+  let inboxLeft = 0;
+  let batchTotal = 0;
+  let processed = 0;     // このバッチで実際に仕分けた件数
+  let busy = false;
+  let shiftHeld = false;
+
+  const $ = (id) => document.getElementById(id);
+
+  /* ── 初期化 ── */
+  window.addEventListener('load', () => {
+    google.script.run.withSuccessHandler((ls) => {
+      labels = ls; renderLabelButtons();
+    }).triageGetLabels();
+    loadBatch();
+  });
+
+  function loadBatch() {
+    $('stage').innerHTML = '<div id="loading">読み込み中…</div>';
+    $('controls').style.display = 'none';
+    google.script.run
+      .withSuccessHandler((res) => {
+        cards = res.cards; idx = 0; processed = 0;
+        inboxLeft = res.inboxLeft; batchTotal = cards.length;
+        if (!cards.length) return renderDone();
+        $('controls').style.display = 'block';
+        renderCard();
+      })
+      .withFailureHandler((e) => toast('読み込みエラー: ' + e.message))
+      .triageGetBatch();
+  }
+
+  /* ── 描画 ── */
+  function renderCard() {
+    const c = cards[idx];
+    if (!c) { loadBatch(); return; }
+    updateMeta();
+    const same = sameSenderIds(c).length;
+    $('stage').innerHTML = `
+      <div class="card" id="card">
+        <div class="swipe-badge archive">アーカイブ</div>
+        <div class="swipe-badge skip">あとで</div>
+        <div class="row1">
+          ${c.unread ? '<span class="unread-dot"></span>' : ''}
+          <span class="from">${esc(c.from)}</span>
+          <span class="date">${esc(c.date)}${c.count > 1 ? ' ・' + c.count + '通' : ''}</span>
+        </div>
+        <div class="email">${esc(c.fromEmail)}</div>
+        <div class="subject">${esc(c.subject)}</div>
+        <div class="snippet clamp" id="snippet">${esc(c.snippet)}</div>
+        <button class="morebtn" id="moreBtn" style="display:none">…詳細を読む</button>
+        <div class="same-sender ${same > 1 ? 'show' : ''}">
+          この差出人のメールがあと ${same - 1} 件あります — まとめて処理は下のチェック or Shift
+        </div>
+      </div>`;
+
+    // 本文が3行に収まらないときだけ「詳細を読む」を出す
+    const sn = $('snippet'), mb = $('moreBtn');
+    if (sn.scrollHeight > sn.clientHeight + 2) {
+      mb.style.display = 'inline-block';
+      mb.onclick = () => {
+        const open = !sn.classList.contains('clamp');
+        sn.classList.toggle('clamp', open);
+        mb.textContent = open ? '…詳細を読む' : 'たたむ';
+      };
+    }
+
+    attachSwipe($('card'));
+  }
+
+  /* ── スワイプ(スマホ): 右=アーカイブ / 左=あとで ── */
+  function attachSwipe(el) {
+    let sx = 0, sy = 0, dx = 0, active = false, horiz = null;
+    const badgeA = el.querySelector('.swipe-badge.archive');
+    const badgeS = el.querySelector('.swipe-badge.skip');
+    el.addEventListener('touchstart', (e) => {
+      const t = e.touches[0];
+      sx = t.clientX; sy = t.clientY; dx = 0; active = true; horiz = null;
+      el.style.transition = 'none';
+    }, { passive: true });
+    el.addEventListener('touchmove', (e) => {
+      if (!active) return;
+      const t = e.touches[0];
+      const dy = t.clientY - sy;
+      dx = t.clientX - sx;
+      if (horiz === null && (Math.abs(dx) > 8 || Math.abs(dy) > 8)) {
+        horiz = Math.abs(dx) > Math.abs(dy);
+        if (!horiz) { active = false; reset(); return; } // 縦スクロールに譲る
+      }
+      if (!horiz) return;
+      el.style.transform = `translateX(${dx}px) rotate(${dx / 24}deg)`;
+      badgeA.style.opacity = dx > 0 ? Math.min(dx / 90, 1) : 0;
+      badgeS.style.opacity = dx < 0 ? Math.min(-dx / 90, 1) : 0;
+    }, { passive: true });
+    el.addEventListener('touchend', () => {
+      if (!active) return;
+      active = false;
+      if (horiz && dx > 90) act('archive');
+      else if (horiz && dx < -90) skip();
+      else reset();
+    });
+    function reset() {
+      el.style.transition = 'transform .18s';
+      el.style.transform = '';
+      badgeA.style.opacity = 0;
+      badgeS.style.opacity = 0;
+    }
+  }
+
+  let pending = new Set(); // 複数ラベル選択中のラベル名
+
+  function renderLabelButtons() {
+    const colors = ['--l1','--l2','--l3','--l4','--l5','--l6','--l7','--l8'];
+    const row = $('labelRow');
+    row.innerHTML = '';
+    labels.forEach((l, i) => {
+      const b = document.createElement('button');
+      b.className = 'lbtn';
+      b.style.background = `var(${colors[i % 8]})`;
+      b.innerHTML = `${esc(l)}<span class="key">${i + 1}</span>`;
+      b.dataset.label = l;
+      let lpTimer = null, lpFired = false;
+      b.addEventListener('click', (e) => {
+        if (lpFired) { lpFired = false; return; } // 長押し直後のclickは無視
+        if (e.ctrlKey || e.metaKey) togglePending(l);
+        else applyLabels(l);
+      });
+      // スマホ: 長押しで複数選択
+      b.addEventListener('touchstart', () => {
+        lpTimer = setTimeout(() => { lpFired = true; togglePending(l); }, 420);
+      }, { passive: true });
+      b.addEventListener('touchend', () => clearTimeout(lpTimer));
+      b.addEventListener('touchmove', () => clearTimeout(lpTimer));
+      row.appendChild(b);
+    });
+    updatePendingUI();
+  }
+
+  function togglePending(l) {
+    if (pending.has(l)) pending.delete(l); else pending.add(l);
+    updatePendingUI();
+  }
+
+  function clearPending() {
+    pending.clear();
+    updatePendingUI();
+  }
+
+  function updatePendingUI() {
+    document.querySelectorAll('.lbtn').forEach((b) =>
+      b.classList.toggle('selected', pending.has(b.dataset.label)));
+    const bar = $('pendingBar');
+    if (pending.size) {
+      bar.innerHTML = '選択中: <b>' + [...pending].map(esc).join('・') +
+        '</b> — もう1つラベルを普通に押す か Enter で全部まとめて付けます(Escで解除)';
+      bar.classList.add('show');
+    } else {
+      bar.classList.remove('show');
+    }
+  }
+
+  /* 選択中のラベル(＋最後に押したラベル)をまとめて適用 */
+  function applyLabels(last) {
+    const ls = [...pending];
+    if (last && !pending.has(last)) ls.push(last);
+    if (!ls.length) return;
+    clearPending();
+    act('label', ls);
+  }
+
+  function updateMeta() {
+    $('left').textContent = Math.max(inboxLeft - processed, 0);
+    const pct = batchTotal ? Math.round((processed / batchTotal) * 100) : 0;
+    $('barFill').style.width = Math.min(pct, 100) + '%';
+  }
+
+  function renderDone() {
+    $('stage').innerHTML = `
+      <div id="done">
+        <div class="big"><svg viewBox="0 0 24 24" width="44" height="44" fill="none" stroke="#059669" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="m8 12.5 2.5 2.5L16 9.5"/></svg></div>
+        受信トレイ、ぜんぶ捌けました!<br>
+        <span style="font-size:12.5px">また溜まったらこのページを開いてください</span>
+      </div>`;
+    $('controls').style.display = 'none';
+    $('left').textContent = 0;
+    $('barFill').style.width = '100%';
+  }
+
+  /* ── アクション ── */
+  function sameSenderIds(c) {
+    return cards.slice(idx).filter((x) => x.fromEmail && x.fromEmail === c.fromEmail).map((x) => x.id);
+  }
+
+  /* label は 'label' アクションのとき ラベル名の配列(または文字列) */
+  function act(action, label) {
+    if (busy) return;
+    const c = cards[idx];
+    if (!c) return;
+    const labelArr = action === 'label' ? (Array.isArray(label) ? label : [label]) : [];
+    clearPending();
+    const grouped = $('senderChk').checked || shiftHeld;
+    const ids = grouped ? sameSenderIds(c) : [c.id];
+    const removed = cards.filter((x) => ids.includes(x.id));
+
+    // 画面は先に進める(体感を軽く)
+    animateOut(action === 'star' ? 'out-right' : 'out-left');
+    cards = cards.filter((x) => !ids.includes(x.id)); // 処理したカードを束から除去(idxはそのまま=次のカードを指す)
+    processed += ids.length;
+    undoStack.push({ ids, action, label: labelArr, cards: removed });
+    busy = true;
+    google.script.run
+      .withSuccessHandler(() => { busy = false; })
+      .withFailureHandler((e) => { busy = false; toast('エラー: ' + e.message + '(Zで戻せます)'); })
+      .triageAct(ids, action, labelArr);
+
+    const names = { archive: 'アーカイブ', star: '★重要', trash: 'ゴミ箱', label: '「' + labelArr.join('」「') + '」' };
+    toast((ids.length > 1 ? ids.length + '件まとめて ' : '') + names[action] + ' にしました(Zで戻す)');
+
+    setTimeout(renderCard, 170);
+  }
+
+  function skip() {
+    if (busy) return;
+    clearPending();
+    animateOut('out-right');
+    setTimeout(() => { idx++; renderCard(); }, 170);
+  }
+
+  function undo() {
+    const last = undoStack.pop();
+    if (!last) { toast('戻すものがありません'); return; }
+    busy = true;
+    google.script.run
+      .withSuccessHandler(() => {
+        busy = false;
+        // カードを表示位置に戻す
+        cards.splice(idx, 0, ...last.cards);
+        processed = Math.max(processed - last.ids.length, 0);
+        renderCard();
+        toast('元に戻しました');
+      })
+      .withFailureHandler((e) => { busy = false; toast('戻せませんでした: ' + e.message); })
+      .triageUndo(last.ids, last.action, last.label);
+  }
+
+  function animateOut(cls) {
+    const el = $('card');
+    if (el) el.classList.add(cls);
+  }
+
+  /* ── キーボード ── */
+  window.addEventListener('keydown', (e) => {
+    if ($('modal').classList.contains('show')) return;
+    if (e.key === 'Shift') { shiftHeld = true; $('senderToggle').classList.add('armed'); return; }
+    const k = e.key.toLowerCase();
+    if (k === 'a' || e.key === 'ArrowLeft') act('archive');
+    else if (k === 's') act('star');
+    else if (k === 'd') act('trash');
+    else if (k === 'z') undo();
+    else if (e.key === 'Enter') applyLabels(null); // 選択中のラベルをまとめて確定
+    else if (e.key === 'Escape') clearPending();
+    else if (e.key === ' ' || e.key === 'ArrowRight') { e.preventDefault(); skip(); }
+    else if (/^[1-8]$/.test(e.key)) {
+      const l = labels[Number(e.key) - 1];
+      if (!l) return;
+      if (e.ctrlKey || e.metaKey) { e.preventDefault(); togglePending(l); } // Ctrl+数字=複数選択
+      else applyLabels(l);
+    }
+  });
+  window.addEventListener('keyup', (e) => {
+    if (e.key === 'Shift') { shiftHeld = false; $('senderToggle').classList.remove('armed'); }
+  });
+
+  /* ── 設定 ── */
+  function openSettings() {
+    $('labelsInput').value = labels.join('\n');
+    $('modal').classList.add('show');
+  }
+  function closeSettings() { $('modal').classList.remove('show'); }
+  function saveSettings() {
+    const arr = $('labelsInput').value.split('\n').map((s) => s.trim()).filter(Boolean);
+    google.script.run
+      .withSuccessHandler((clean) => {
+        labels = clean; renderLabelButtons(); closeSettings(); toast('ラベルを保存しました');
+      })
+      .withFailureHandler((e) => toast('保存エラー: ' + e.message))
+      .triageSaveLabels(arr);
+  }
+
+  /* ── 小物 ── */
+  function toast(msg) {
+    const t = $('toast');
+    t.textContent = msg;
+    t.classList.add('show');
+    clearTimeout(t._tm);
+    t._tm = setTimeout(() => t.classList.remove('show'), 2200);
+  }
+  function esc(s) {
+    return String(s || '').replace(/[&<>"']/g, (c) =>
+      ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  }
+  function escAttr(s) { return esc(s).replace(/'/g, '&#39;'); }
+</script>
+</body>
+</html>
