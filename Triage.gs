@@ -53,6 +53,10 @@ function countInbox_() {
  * labelName: labelのとき。文字列1つ or 配列(複数ラベル)どちらでも可 */
 function triageAct(ids, action, labelName) {
   const threads = ids.map((id) => GmailApp.getThreadById(id)).filter(Boolean);
+  // 仕分けの意思決定をしたメールは既読にする(unlabel=チップはがしは対象外)
+  if (action === 'archive' || action === 'label' || action === 'star' || action === 'trash') {
+    threads.forEach((t) => t.markRead());
+  }
   if (action === 'archive') {
     threads.forEach((t) => t.moveToArchive());
   } else if (action === 'label') {
@@ -75,8 +79,9 @@ function triageAct(ids, action, labelName) {
   return threads.length;
 }
 
-/* ── 元に戻す ── */
-function triageUndo(ids, action, labelName) {
+/* ── 元に戻す ──
+ * unreadIds: 処理前に未読だったスレッドID(既読化も巻き戻す) */
+function triageUndo(ids, action, labelName, unreadIds) {
   const threads = ids.map((id) => GmailApp.getThreadById(id)).filter(Boolean);
   if (action === 'archive') {
     threads.forEach((t) => t.moveToInbox());
@@ -96,6 +101,11 @@ function triageUndo(ids, action, labelName) {
   } else if (action === 'trash') {
     threads.forEach((t) => t.moveToInbox()); // ゴミ箱から受信トレイへ戻す
   }
+  // 未読だったものは未読に戻す
+  (unreadIds || []).forEach((id) => {
+    const t = GmailApp.getThreadById(id);
+    if (t) t.markUnread();
+  });
   return threads.length;
 }
 
@@ -109,7 +119,27 @@ function triageGetLabels() {
   const p = PropertiesService.getUserProperties().getProperty('TRIAGE_LABELS');
   const chosen = p ? JSON.parse(p)
     : (all.length ? all.slice(0, 8) : ['大学', 'バイト', 'お金', 'メルマガ', 'あとで読む']);
-  return { chosen: chosen, all: all };
+  return { chosen: chosen, all: all, colors: fetchLabelColors_() };
+}
+
+/* Gmailで設定したラベル色を取得(REST API)。失敗しても空でフォールバック */
+function fetchLabelColors_() {
+  const colors = {};
+  try {
+    const resp = UrlFetchApp.fetch('https://gmail.googleapis.com/gmail/v1/users/me/labels', {
+      headers: { Authorization: 'Bearer ' + ScriptApp.getOAuthToken() },
+      muteHttpExceptions: true,
+    });
+    if (resp.getResponseCode() === 200) {
+      const data = JSON.parse(resp.getContentText());
+      (data.labels || []).forEach((l) => {
+        if (l.type === 'user' && l.color) {
+          colors[l.name] = { bg: l.color.backgroundColor, fg: l.color.textColor };
+        }
+      });
+    }
+  } catch (e) { /* 色なしで続行 */ }
+  return colors;
 }
 
 function triageSaveLabels(arr) {

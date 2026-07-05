@@ -73,6 +73,11 @@
     background: #fff; border: 1px solid #d8dce4; border-radius: 4px;
     padding: 0 3px; line-height: 1.5;
   }
+  .chip.allclear {
+    border: 1.5px dashed #c2352b; background: #fff; color: #c2352b;
+    cursor: pointer; padding: 3px 10px;
+  }
+  .chip.allclear:hover { background: #fdf0ef; }
   .snippet { color: var(--sub); font-size: 13.5px; line-height: 1.65; word-break: break-word; }
   .snippet.clamp { display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
   .morebtn {
@@ -95,11 +100,11 @@
   .same-sender.show { display: block; }
 
   /* ── ボタン ── */
-  #actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 16px; }
+  #actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
   .btn {
     flex: 1 1 30%; min-width: 100px; border: none; border-radius: 12px; cursor: pointer;
-    padding: 12px 8px 9px; color: #fff; font-size: 14px; font-weight: 700;
-    display: flex; flex-direction: column; align-items: center; gap: 3px;
+    padding: 9px 8px 7px; color: #fff; font-size: 13px; font-weight: 700; opacity: .92;
+    display: flex; flex-direction: column; align-items: center; gap: 2px;
     transition: transform .06s, filter .12s;
   }
   .btn:active { transform: scale(.96); }
@@ -124,7 +129,7 @@
   /* ── 複数ラベル選択 ── */
   #labelBar {
     display: flex; justify-content: space-between; align-items: center;
-    margin-top: 12px; padding: 0 2px;
+    margin-top: 16px; padding: 0 2px;
   }
   #labelBar .cap { font-size: 12px; color: var(--sub); font-weight: 700; }
   #multiBtn {
@@ -206,6 +211,12 @@
   </div>
 
   <div id="controls" style="display:none">
+    <div id="labelBar">
+      <span class="cap">ラベル</span>
+      <button id="multiBtn" onclick="toggleMulti()">複数選択 OFF(X)</button>
+    </div>
+    <div id="labelRow"></div>
+    <div id="pendingBar"></div>
     <div id="actions">
       <button class="btn" style="background:var(--c-archive)" onclick="act('archive')">
         アーカイブ<span class="key">A / ←</span></button>
@@ -214,12 +225,6 @@
       <button class="btn" style="background:var(--c-trash)" onclick="act('trash')">
         ゴミ箱<span class="key">D</span></button>
     </div>
-    <div id="labelBar">
-      <span class="cap">ラベル</span>
-      <button id="multiBtn" onclick="toggleMulti()">複数選択 OFF(X)</button>
-    </div>
-    <div id="labelRow"></div>
-    <div id="pendingBar"></div>
     <div id="subRow">
       <button class="ghost" onclick="skip()">あとで(スキップ) Space</button>
       <button class="ghost" onclick="undo()">
@@ -233,7 +238,8 @@
     <div class="hint">
       複数ラベル: 「複数選択」をONにして(PCはXキー)ラベルを選び、「付けて完了」(または Enter)。
       スマホは カードを右スワイプ=アーカイブ / 左スワイプ=あとで。
-      付いているラベルはチップの× か Alt+数字(チップに表示)ではがせます。
+      付いているラベルはチップの× か Alt+数字ではがせます(Alt+0で全部はがす)。
+      仕分けすると自動で既読になります(「あとで」は未読のまま)。
     </div>
   </div>
 </div>
@@ -281,7 +287,7 @@
         withSuccessHandler(cb) { this._ok = cb; return this; },
         withFailureHandler(cb) { this._ng = cb; return this; },
         triageGetBatch() { setTimeout(() => this._ok && this._ok({ cards: demoPool.slice(), inboxLeft: demoPool.length }), 300); },
-        triageGetLabels() { setTimeout(() => this._ok && this._ok({ chosen: ['大学', 'バイト', 'お金', 'メルマガ', 'あとで読む'], all: ['大学', 'バイト', 'お金', 'メルマガ', 'あとで読む', '旅行', '領収書'] }), 100); },
+        triageGetLabels() { setTimeout(() => this._ok && this._ok({ chosen: ['大学', 'バイト', 'お金', 'メルマガ', 'あとで読む'], all: ['大学', 'バイト', 'お金', 'メルマガ', 'あとで読む', '旅行', '領収書'], colors: { '大学': { bg: '#4a86e8', fg: '#ffffff' }, 'バイト': { bg: '#16a766', fg: '#ffffff' }, 'メルマガ': { bg: '#fb4c2f', fg: '#ffffff' } } }), 100); },
         triageSaveLabels(arr) { setTimeout(() => this._ok && this._ok(arr.slice(0, 8)), 100); },
         triageAct(ids, action) { if (action !== 'unlabel') demoPool = demoPool.filter((c) => !ids.includes(c.id)); setTimeout(() => this._ok && this._ok(ids.length), 150); },
         triageUndo(ids) { setTimeout(() => this._ok && this._ok(ids.length), 150); },
@@ -298,6 +304,7 @@
   let idx = 0;           // 表示中のカード位置
   let labels = [];       // ラベルボタン
   let allLabels = [];    // Gmailにある全ラベル(編集画面の候補)
+  let labelColors = {};  // Gmailで設定したラベル色 {名前: {bg, fg}}
   let multiMode = false; // 複数ラベル選択モード
   let undoStack = [];    // {ids, action, label, cards}
   let inboxLeft = 0;
@@ -313,7 +320,9 @@
     google.script.run.withSuccessHandler((res) => {
       labels = res.chosen || [];
       allLabels = res.all || [];
+      labelColors = res.colors || {};
       renderLabelButtons();
+      renderCardIfReady_();
     }).triageGetLabels();
     loadBatch();
   });
@@ -349,8 +358,11 @@
           <span class="date">${esc(c.date)}${c.count > 1 ? ' ・' + c.count + '通' : ''}</span>
         </div>
         <div class="email">${esc(c.fromEmail)}</div>
-        ${(c.labels && c.labels.length) ? `<div class="chiprow">${c.labels.map((n, i) =>
-          `<span class="chip">${i < 8 ? `<span class="ckey">Alt+${i + 1}</span>` : ''}${esc(n)}<button data-chip="${escAttr(n)}" title="このラベルをはがす">×</button></span>`).join('')}</div>` : ''}
+        ${(c.labels && c.labels.length) ? `<div class="chiprow">${c.labels.map((n, i) => {
+          const gc = labelColors[n];
+          const st = gc ? ` style="background:${escAttr(gc.bg)};color:${escAttr(gc.fg)}"` : '';
+          return `<span class="chip"${st}>${i < 8 ? `<span class="ckey">Alt+${i + 1}</span>` : ''}${esc(n)}<button data-chip="${escAttr(n)}" title="このラベルをはがす">×</button></span>`;
+        }).join('')}${c.labels.length > 1 ? `<button class="chip allclear" onclick="removeAllChips()"><span class="ckey">Alt+0</span>すべてはがす</button>` : ''}</div>` : ''}
         <div class="subject">${esc(c.subject)}</div>
         <div class="snippet clamp" id="snippet">${esc(c.snippet)}</div>
         <button class="morebtn" id="moreBtn" style="display:none">…詳細を読む</button>
@@ -382,17 +394,27 @@
   }
 
   /* ── 付いているラベルをはがす ── */
-  function removeChip(name) {
+  function removeChip(name) { removeChips_([name], '「' + name + '」をはがしました'); }
+
+  function removeAllChips() {
+    const c = cards[idx];
+    if (!c || !c.labels || !c.labels.length) return;
+    removeChips_(c.labels.slice(), 'ラベルを全部はがしました');
+  }
+
+  function removeChips_(names, msg) {
     const c = cards[idx];
     if (!c) return;
-    c.labels = (c.labels || []).filter((x) => x !== name);
-    undoStack.push({ ids: [c.id], action: 'unlabel', label: [name], cards: [], cardId: c.id });
+    c.labels = (c.labels || []).filter((x) => !names.includes(x));
+    undoStack.push({ ids: [c.id], action: 'unlabel', label: names, cards: [], cardId: c.id });
     google.script.run
       .withFailureHandler((e) => toast('エラー: ' + e.message))
-      .triageAct([c.id], 'unlabel', [name]);
+      .triageAct([c.id], 'unlabel', names);
     renderCard();
-    toast('「' + name + '」をはがしました(Zで戻す)');
+    toast(msg + '(Zで戻す)');
   }
+
+  function renderCardIfReady_() { if (cards[idx]) renderCard(); }
 
   /* ── スワイプ(スマホ): 右=アーカイブ / 左=あとで ── */
   function attachSwipe(el) {
@@ -442,7 +464,9 @@
     labels.forEach((l, i) => {
       const b = document.createElement('button');
       b.className = 'lbtn';
-      b.style.background = `var(${colors[i % 8]})`;
+      const gc = labelColors[l]; // Gmailで設定した色があれば同じ色に
+      if (gc) { b.style.background = gc.bg; b.style.color = gc.fg; }
+      else b.style.background = `var(${colors[i % 8]})`;
       b.innerHTML = `${esc(l)}<span class="key">${i + 1}</span>`;
       b.dataset.label = l;
       b.addEventListener('click', () => {
@@ -537,7 +561,8 @@
     animateOut(action === 'star' ? 'out-right' : 'out-left');
     cards = cards.filter((x) => !ids.includes(x.id)); // 処理したカードを束から除去(idxはそのまま=次のカードを指す)
     processed += ids.length;
-    undoStack.push({ ids, action, label: labelArr, cards: removed });
+    // サーバー側で既読化されるので、undo用に「元は未読だったもの」を覚えておく
+    undoStack.push({ ids, action, label: labelArr, cards: removed, unreadIds: removed.filter((x) => x.unread).map((x) => x.id) });
     busy = true;
     google.script.run
       .withSuccessHandler(() => { busy = false; })
@@ -577,7 +602,7 @@
         toast('元に戻しました');
       })
       .withFailureHandler((e) => { busy = false; toast('戻せませんでした: ' + e.message); })
-      .triageUndo(last.ids, last.action, last.label);
+      .triageUndo(last.ids, last.action, last.label, last.unreadIds || []);
   }
 
   function animateOut(cls) {
@@ -589,11 +614,13 @@
   window.addEventListener('keydown', (e) => {
     if ($('modal').classList.contains('show')) return;
     if (e.key === 'Shift') { shiftHeld = true; $('senderToggle').classList.add('armed'); return; }
-    // Alt+数字 = カードに付いているn番目のラベルをはがす
-    if (e.altKey && /^Digit[1-8]$/.test(e.code)) {
-      const i = Number(e.code.slice(5)) - 1;
+    // Alt+数字 = カードに付いているn番目のラベルをはがす / Alt+0 = 全部はがす
+    if (e.altKey && /^Digit[0-8]$/.test(e.code)) {
+      e.preventDefault();
+      const n = Number(e.code.slice(5));
+      if (n === 0) { removeAllChips(); return; }
       const c = cards[idx];
-      if (c && c.labels && c.labels[i]) { e.preventDefault(); removeChip(c.labels[i]); }
+      if (c && c.labels && c.labels[n - 1]) removeChip(c.labels[n - 1]);
       return;
     }
     if (e.altKey || e.ctrlKey || e.metaKey) return; // 他のブラウザショートカットには触らない
